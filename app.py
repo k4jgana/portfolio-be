@@ -14,7 +14,7 @@ app = FastAPI(title="Nenad Kajgana AI Assistant")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173","http://nenadkajgana.com"],
     allow_methods=["*"],
     allow_headers=["*"],
 )

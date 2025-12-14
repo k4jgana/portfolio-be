@@ -45,11 +45,8 @@ auth_manager = SpotifyOAuth(
     cache_path=None
 )
 
-# Force-refresh the access token using your permanent refresh token
 token_info = auth_manager.refresh_access_token(SPOTIFY_REFRESH_TOKEN)
 access_token = token_info["access_token"]
-
-# Now create a Spotify client directly with the refreshed token
 spotify = spotipy.Spotify(auth=access_token)
 
 
