@@ -16,6 +16,8 @@ PINECONE_INDEX = "nenad-info"
 NAMESPACE = os.getenv("NAMESPACE", "default")
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
+SPOTIFY_REDIRECT_URI = os.getenv("SPOTIFY_REDIRECT_URI")
+SPOTIFY_REFRESH_TOKEN = os.getenv("SPOTIFY_REFRESH_TOKEN")
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small", openai_api_key=OPENAI_API_KEY)
 
 DEFAULT_MODEL = "gpt-4o-mini"
@@ -28,22 +30,22 @@ vector_store = PineconeVectorStore.from_existing_index(
 )
 
 
-spotify = spotipy.Spotify(
-    auth_manager=SpotifyOAuth(
-        client_id=SPOTIFY_CLIENT_ID,
-        client_secret=SPOTIFY_CLIENT_SECRET,
-        redirect_uri="http://127.0.0.1:8888/callback",
-        scope=(
-            "user-library-read "
-            "user-top-read "
-            "user-read-recently-played "
-            "user-read-private "
-            "user-read-email"
-        )
-    )
+auth_manager = SpotifyOAuth(
+    client_id=SPOTIFY_CLIENT_ID,
+    client_secret=SPOTIFY_CLIENT_SECRET,
+    redirect_uri=SPOTIFY_REDIRECT_URI,
+    scope=(
+        "user-library-read "
+        "user-top-read "
+        "user-read-recently-played "
+        "user-read-private "
+        "user-read-email"
+    ),
+    cache_path=None
 )
 
-
+auth_manager.refresh_token = SPOTIFY_REFRESH_TOKEN
+spotify = spotipy.Spotify(auth_manager=auth_manager)
 lb = LetterboxdService()
 
 
