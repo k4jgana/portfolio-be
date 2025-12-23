@@ -11,7 +11,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def run(user_query: str, convo_history:str='') -> AgentState:
+def run(user_query: str, convo_history:str='', email='guest') -> AgentState:
     """
     Run the agent graph with a user query.
 
@@ -26,11 +26,12 @@ def run(user_query: str, convo_history:str='') -> AgentState:
     initial_state: AgentState = {
         "messages": [HumanMessage(content=user_query)],
         "context": "",
+        "email": email,
         "next_step": "route",
         "convo_history": convo_history
     }
 
-    graph = create_graph()
+    graph = create_graph(email)
 
     final_state = cast(AgentState, graph.invoke(initial_state))
 
