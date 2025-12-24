@@ -33,24 +33,25 @@ vector_store = PineconeVectorStore.from_existing_index(
 )
 
 
-auth_manager = SpotifyOAuth(
-    client_id=SPOTIFY_CLIENT_ID,
-    client_secret=SPOTIFY_CLIENT_SECRET,
-    redirect_uri=SPOTIFY_REDIRECT_URI,
-    scope=(
-        "user-library-read "
-        "user-top-read "
-        "user-read-recently-played "
-        "user-read-private "
-        "user-read-email"
-    ),
-    open_browser=False,
-    cache_path=None
-)
+def get_spotify_client():
+    auth_manager = SpotifyOAuth(
+        client_id=SPOTIFY_CLIENT_ID,
+        client_secret=SPOTIFY_CLIENT_SECRET,
+        redirect_uri=SPOTIFY_REDIRECT_URI,
+        scope=(
+            "user-library-read "
+            "user-top-read "
+            "user-read-recently-played "
+            "user-read-private "
+            "user-read-email"
+        ),
+        open_browser=False,
+        cache_path=None
+    )
 
-token_info = auth_manager.refresh_access_token(SPOTIFY_REFRESH_TOKEN)
-access_token = token_info["access_token"]
-spotify = spotipy.Spotify(auth=access_token)
+    token_info = auth_manager.refresh_access_token(SPOTIFY_REFRESH_TOKEN)
+    access_token = token_info["access_token"]
+    return spotipy.Spotify(auth=access_token)
 
 
 lb = LetterboxdService()
