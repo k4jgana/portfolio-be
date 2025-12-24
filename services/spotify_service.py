@@ -1,11 +1,6 @@
-from utils.constants import spotify as sp
-from collections import Counter
-
-
-
-
 from collections import Counter
 from datetime import datetime
+from utils.constants import get_spotify_client
 
 def get_albums(top=10):
     """
@@ -85,8 +80,10 @@ def get_liked_songs(num_songs=50):
     liked = []
     limit = 50  # Spotify max allowed
     offset = 0
+    sp = get_spotify_client()
 
     while len(liked) < num_songs:
+
         results = sp.current_user_saved_tracks(
             limit=min(limit, num_songs - len(liked)),
             offset=offset
@@ -107,6 +104,7 @@ def get_top_tracks_all_time(limit=50, time_filter='short_term'):
     """
     Returns the user's top tracks (long_term = all time).
     """
+    sp = get_spotify_client()
     results = sp.current_user_top_tracks(time_range=time_filter, limit=limit)
     return results.get("items", [])
 
