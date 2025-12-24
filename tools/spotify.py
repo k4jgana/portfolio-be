@@ -1,6 +1,6 @@
 import random, logging
 from langchain.tools import tool
-from services.spotify_service import get_albums, get_liked_songs, sp
+from services.spotify_service import get_albums, get_liked_songs, get_spotify_client
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,8 @@ def get_artist_recommendations(limit: int = 10, time_filter: str = "short_term")
     """
 
     logger.info(f"[MusicAgent][get_artist_recommendations] tool called")
+
+    sp = get_spotify_client()
 
     results = sp.current_user_top_artists(time_range=time_filter, limit=limit)
     items = results.get("items", [])
