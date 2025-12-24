@@ -9,6 +9,9 @@ from services.letterboxd_service import LetterboxdService
 
 load_dotenv()
 
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+MASTER_EMAIL = os.getenv("MASTER_EMAIL")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_ENVIRONMENT = os.getenv("PINECONE_ENVIRONMENT")
@@ -54,11 +57,6 @@ lb = LetterboxdService()
 
 
 
-
-
-
-
-
 available_paths = {
     "knowledge": "Use this path when the user asks questions specifically about "
                  "Nenad Kajgana, his career, beliefs and etc.",
@@ -69,3 +67,4 @@ available_paths = {
             "movie related stuff, recommendations, top movies of Nenad Kajgana, his personal favorites etc "
             "Basically anything movie related"
 }
+

@@ -7,6 +7,7 @@ from tools.spotify import (
     get_artist_recommendations,
     get_song_recommendations,
 )
+from tools.master_tools import get_cd_collection
 from utils.constants import llm
 from utils.loader import load_prompt
 from schemas import AgentState
@@ -21,7 +22,7 @@ def music_recommendations_agent(state: AgentState) -> AgentState:
     via a React agent to return recommendations.
     """
     llm_with_tools = llm.bind_tools(
-        [get_album_recommendations, get_artist_recommendations, get_song_recommendations]
+        [get_album_recommendations, get_artist_recommendations, get_song_recommendations, get_cd_collection]
     )
     query = state["messages"][-1].content
     logger.info(f"[MusicAgent] Received query: {query!r}")
@@ -29,7 +30,7 @@ def music_recommendations_agent(state: AgentState) -> AgentState:
 
     music_agent = create_agent(
         model=llm_with_tools,
-        tools=[get_album_recommendations, get_artist_recommendations, get_song_recommendations],
+        tools=[get_album_recommendations, get_artist_recommendations, get_song_recommendations, get_cd_collection],
     )
     input_messages = [SystemMessage(content=system_prompt), HumanMessage(content=query)]
     response = music_agent.invoke({"messages": input_messages})
