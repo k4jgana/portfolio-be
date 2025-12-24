@@ -6,6 +6,7 @@ from tools.master_tools import (
     get_cd_collection,
     add_new_cd,
     update_cd_have_status,
+    upsert_record
 )
 from services.cd_service import get_cds
 from utils.constants import llm, MASTER_EMAIL
@@ -34,11 +35,10 @@ def master_controller_agent(state: AgentState) -> AgentState:
         return state
 
     logger.info(f"[MasterController] Activated by {user_email} with query: {query!r}")
-    tools = [get_cd_collection, add_new_cd, update_cd_have_status]
+    tools = [get_cd_collection, add_new_cd, update_cd_have_status, upsert_record]
     llm_with_tools = llm.bind_tools(tools)
     system_prompt = load_prompt("master", context={"query": query, "cds": CDs})
 
-    # Create the agent (same pattern as movie agent)
     master_agent = create_agent(
         model=llm_with_tools,
         tools=tools,

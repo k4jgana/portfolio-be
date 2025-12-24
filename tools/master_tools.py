@@ -1,6 +1,7 @@
 import logging
 from langchain.tools import tool
 from services.cd_service import get_cds, set_have, add_cd
+from utils.constants import vector_store
 
 logger = logging.getLogger(__name__)
 
@@ -53,3 +54,25 @@ def add_new_cd(artist: str, album: str, have: bool = False) -> str:
 
     add_cd(artist, album, have)
     return f"Added CD: {artist} - {album} (have={have})"
+
+@tool
+def upsert_record(title: str, text: str) -> str:
+    """
+    Embeds a single text record and upserts it into Pinecone via LangChain's PineconeVectorStore.
+
+    Args:
+        title: Title or name of the record.
+        text: Content to be embedded and stored.
+    """
+    logger.info(f"[MasterAgent][upsert_record] Upserting record: {title}")
+
+    try:
+        combined_text = f"{title} {text}"
+        metadata = {"title": title, "text": text}
+        vector_store.add_texts([combined_text], metadatas=[metadata])
+
+        logger.info(f"[MasterAgent][upsert_record] Successfully upserted '{title}' into Pinecone.")
+        return f"✅ Successfully embedded and upserted '{title}' into Pinecone."
+    except Exception as e:
+        logger.error(f"[MasterAgent][upsert_record] Failed to upsert record: {e}", exc_info=True)
+        return f"❌ Failed to upsert '{title}' into Pinecone: {e}"

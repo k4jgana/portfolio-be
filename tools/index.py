@@ -1,7 +1,9 @@
 from langchain.tools import tool
 from utils.constants import vector_store
 import pandas as pd
-import tqdm
+import tqdm, logging
+
+logger = logging.getLogger(__name__)
 
 @tool
 def retrieve_context(query: str) -> str:
