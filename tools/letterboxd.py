@@ -60,7 +60,7 @@ def get_recent_movie_ratings(limit: int = 30) -> str:
         return "No recent ratings found."
 
     output_lines = [
-        f"{i+1}. {item.get('title','Unknown Title')} - Rating: {item.get('rating','N/A')} - Month: {item.get('month','N/A')}"
+        f"{i + 1}. {item.get('title', 'Unknown Title')} - Rating: {item.get('rating', 'N/A')} - Month: {item.get('month', 'N/A')} - Description: {item.get('description', 'No description')}"
         for i, item in enumerate(recs[:limit])
     ]
     return "\n".join(output_lines)

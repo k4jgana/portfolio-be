@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 
+
 LETTERBOXD_URL = 'https://letterboxd.com/k4jgana/'
 
 class LetterboxdService:
@@ -81,10 +82,18 @@ class LetterboxdService:
             )
             rating = self._parse_rating(rating_span)
 
+            # --- LINK ---
+            link_elem = title_elem
+            movie_link = None
+            if link_elem and link_elem.get("href"):
+                movie_link = f"https://letterboxd.com{link_elem['href']}".replace("/k4jgana",'')
+            description = self.get_movie_description(movie_link)
+
             results.append({
                 "title": title,
                 "rating": rating,
                 "month": current_month,
+                "description":description
             })
 
         return results
@@ -283,5 +292,34 @@ class LetterboxdService:
                 })
 
         return results
+
+    def get_movie_description(self, url: str) -> str:
+        """
+        Scrape the movie description from a Letterboxd movie page.
+
+        Args:
+            url (str): Full URL of the Letterboxd movie page.
+
+        Returns:
+            str: Movie description paragraph. Empty string if not found.
+        """
+        try:
+            resp = requests.get(url, headers=self.headers, timeout=15)
+            resp.raise_for_status()
+        except Exception as e:
+            print(f"Error fetching URL: {e}")
+            return ""
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # Select the production-synopsis section
+        synopsis_section = soup.select_one("section.production-synopsis div.truncate p")
+        if synopsis_section:
+            return synopsis_section.get_text(strip=True)
+
+        return ""
+
+
+
 
 
