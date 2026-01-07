@@ -1,6 +1,7 @@
 import random, logging
 from langchain.tools import tool
 from services.spotify_service import get_albums, get_liked_songs, get_spotify_client
+from services.lastfm_service import scrape_top_albums, scrape_top_artists
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +22,10 @@ def get_album_recommendations(num: int = 5) -> str:
 
     logger.info(f"[MusicAgent][get_album_recommendations] tool called")
 
-    recs = get_albums(top=num)
+    recs = scrape_top_albums()
     if not recs:
         return "No albums found."
-    output_lines = [f"{i+1}. {album['album_name']} - {album['artist']} - Date Listened:{album['latest_added_at']}" for i, album in enumerate(recs[:num])]
+    output_lines = [f"{i+1}. {album['album']} - {album['artist']}" for i, album in enumerate(recs[:num])]
     return "\n".join(output_lines)
 
 
@@ -44,13 +45,10 @@ def get_artist_recommendations(limit: int = 10, time_filter: str = "short_term")
 
     logger.info(f"[MusicAgent][get_artist_recommendations] tool called")
 
-    sp = get_spotify_client()
-
-    results = sp.current_user_top_artists(time_range=time_filter, limit=limit)
-    items = results.get("items", [])
-    if not items:
+    results = scrape_top_artists()
+    if not results:
         return "No artists found."
-    output_lines = [f"{i+1}. {artist['name']}" for i, artist in enumerate(items)]
+    output_lines = [f"{i + 1}. {artist}" for i, artist in enumerate(results)]
     return "\n".join(output_lines)
 
 
