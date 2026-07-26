@@ -1,39 +1,39 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from utils.constants import DATABASE_URL
-from schemas import CD
+from utils.constants import CDs
 
 
-engine = create_engine(DATABASE_URL)
-Session = sessionmaker(bind=engine)
-session = Session()
+def _find_cd(album: str, artist: str | None = None):
+    normalized_album = album.strip().casefold()
+    normalized_artist = artist.strip().casefold() if artist is not None else None
+
+    for existing_album, details in CDs.items():
+        if existing_album.strip().casefold() != normalized_album:
+            continue
+        if normalized_artist is not None and details["artist"].strip().casefold() != normalized_artist:
+            continue
+        return existing_album, details
+
+    return None, None
 
 
 
 def get_cds():
-    cds = session.query(CD).all()
-    return "\n".join(f"{cd.artist} - {cd.album} - {str(cd.have).lower()}" for cd in cds)
+    return "\n".join(
+        f"{details['artist']} - {album} - {str(details['have']).lower()}"
+        for album, details in CDs.items()
+    )
 
 # Update 'have' field
 def set_have(artist: str, album: str, have: bool):
-    cd = session.query(CD).filter(
-        CD.artist.ilike(artist), CD.album.ilike(album)
-    ).first()
+    _, cd = _find_cd(album, artist)
     if not cd:
         return 'CD not found'
-    cd.have = have
-    session.commit()
+    cd["have"] = have
 
 
 def add_cd(artist: str, album: str, have: bool = False):
-    existing_cd = session.query(CD).filter(
-        CD.artist.ilike(artist),
-        CD.album.ilike(album)
-    ).first()
+    existing_album, _ = _find_cd(album, artist)
 
-    if existing_cd:
+    if existing_album:
         return f"CD '{artist} - {album}' already exists."
-    new_cd = CD(artist=artist, album=album, have=have)
-    session.add(new_cd)
-    session.commit()
+    CDs[album] = {"artist": artist, "have": have}
 

@@ -84,6 +84,25 @@ SPOTIFY_CLIENT_ID=...
 SPOTIFY_CLIENT_SECRET=...
 SPOTIFY_REFRESH_TOKEN=...   # see "Spotify on Render" below
 SPOTIFY_REDIRECT_URI=https://yourdomain.com/callback
+
+# Chat tracking + persistence
+DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/chatbot
+# Optional fallback if DATABASE_URL is invalid/unreachable (default: sqlite:///./chatbot.db)
+DATABASE_FALLBACK_URL=sqlite:///./chatbot.db
+RATE_LIMIT_REQUESTS=30
+RATE_LIMIT_WINDOW_SECONDS=60
+
+# Optional API hardening
+TRUSTED_HOSTS=localhost,127.0.0.1,nenadkajgana.com
+TRUST_X_FORWARDED_FOR=false  # set true only behind a trusted proxy
+
+# Required for admin analytics authorization
+MASTER_EMAIL=you@example.com
+
+# Firebase token verification (choose one)
+FIREBASE_SERVICE_ACCOUNT_PATH=/path/to/firebase-admin.json
+# OR
+FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
 ```
 
 
@@ -106,7 +125,10 @@ Open:
 ```json
 {
   "query": "Recommend me songs similar to the ones Nenad listens to",
-  "history": []
+  "history": "USER: previous question\nAI: previous answer",
+  "visitor_id": "visitor_123",
+  "chat_session_id": "session_abc",
+  "email": "guest"
 }
 ```
 
@@ -114,9 +136,22 @@ Response:
 
 ```json
 {
-  "answer": "..."
+  "answer": "...",
+  "visitor_id": "visitor_123",
+  "chat_session_id": "session_abc"
 }
 ```
+
+### Analytics endpoint (admin only)
+
+`GET /analytics/summary` requires a valid Firebase `Authorization: Bearer <id_token>` header
+for the configured `MASTER_EMAIL` (and a verified email claim). It returns visitor/session/message/event totals and a 24h window summary.
+
+`POST /ask` now enforces session ownership: if a `chat_session_id` is reused with a different
+`visitor_id`, the API responds with `409`.
+
+Database startup is resilient: when `DATABASE_URL` is malformed or temporarily unavailable,
+the backend automatically falls back to `DATABASE_FALLBACK_URL` (SQLite by default) and keeps serving requests.
 
 ---
 
@@ -135,5 +170,5 @@ This will use the `OpenAIEmbeddings` and `PineconeVectorStore` objects you alrea
 ```bash
 curl -X POST "http://127.0.0.1:8000/ask" \
   -H "Content-Type: application/json" \
-  -d '{"query":"Recommend me music similar to Nenad recent listens","history": []}'
+  -d '{"query":"Recommend me music similar to Nenad recent listens","history":"", "visitor_id":"visitor_123","chat_session_id":"session_abc","email":"guest"}'
 ```
