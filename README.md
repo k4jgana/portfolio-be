@@ -98,6 +98,8 @@ TRUST_X_FORWARDED_FOR=false  # set true only behind a trusted proxy
 
 # Required for admin analytics authorization
 MASTER_EMAIL=you@example.com
+# Optional separate CD manager account; defaults to MASTER_EMAIL
+CD_ADMIN_EMAIL=you@example.com
 
 # Firebase token verification (choose one)
 FIREBASE_SERVICE_ACCOUNT_PATH=/path/to/firebase-admin.json
@@ -152,6 +154,14 @@ for the configured `MASTER_EMAIL` (and a verified email claim). It returns visit
 
 Database startup is resilient: when `DATABASE_URL` is malformed or temporarily unavailable,
 the backend automatically falls back to `DATABASE_FALLBACK_URL` (SQLite by default) and keeps serving requests.
+
+### Private CD manager
+
+The frontend route `/cdinja` signs in with Firebase Google authentication and manages the
+SQL-backed `cds` table. Every request under `/cd-api` sends a Firebase ID token; the backend
+verifies the token, its verified email claim, and an exact match with `CD_ADMIN_EMAIL` (or
+`MASTER_EMAIL` when no separate CD email is set). A fresh database is seeded once with the
+initial catalogue, with the first 32 entries marked as owned.
 
 ---
 

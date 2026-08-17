@@ -31,6 +31,7 @@ from persistence import (
 )
 from runner import run
 from schemas import QueryResponse, QueryRequest
+from cd_routes import router as cd_router
 from utils.constants import MASTER_EMAIL
 
 # -----------------------------
@@ -46,6 +47,7 @@ logger = logging.getLogger(__name__)
 # FastAPI app
 # -----------------------------
 app = FastAPI(title="Nenad Kajgana AI Assistant")
+app.include_router(cd_router)
 trusted_hosts = [host.strip() for host in os.getenv("TRUSTED_HOSTS", "").split(",") if host.strip()]
 if trusted_hosts:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts)

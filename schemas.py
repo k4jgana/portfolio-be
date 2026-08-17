@@ -49,3 +49,27 @@ class QueryResponse(BaseModel):
     context: Optional[str] = None
     visitor_id: Optional[str] = None
     chat_session_id: Optional[str] = None
+
+
+class CDCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=300)
+    artist: str = Field(..., min_length=1, max_length=300)
+    have: bool = False
+
+    @field_validator("name", "artist")
+    @classmethod
+    def trim_cd_text(cls, value: str) -> str:
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("Must not be empty.")
+        return trimmed
+
+
+class CDUpdate(CDCreate):
+    pass
+
+
+class CDResponse(CDCreate):
+    id: int
+
+    model_config = {"from_attributes": True}

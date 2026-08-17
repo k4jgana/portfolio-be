@@ -36,8 +36,7 @@ def update_cd_have_status(artist: str, album: str, have: bool) -> str:
     """
     logger.info(f"[MasterAgent][update_cd_have_status] tool called for {artist} - {album} -> {have}")
 
-    set_have(artist, album, have)
-    return f"Updated '{artist} - {album}' have status to {have}."
+    return set_have(artist, album, have)
 
 
 @tool
@@ -52,8 +51,7 @@ def add_new_cd(artist: str, album: str, have: bool = False) -> str:
     """
     logger.info(f"[MasterAgent][add_new_cd] tool called for {artist} - {album} -> {have}")
 
-    add_cd(artist, album, have)
-    return f"Added CD: {artist} - {album} (have={have})"
+    return add_cd(artist, album, have)
 
 @tool
 def upsert_record(title: str, text: str) -> str:

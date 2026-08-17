@@ -9,6 +9,16 @@ from firebase_admin import credentials
 logger = logging.getLogger(__name__)
 
 
+def _parse_credentials_json(value: str) -> dict:
+    normalized = value.strip()
+    if len(normalized) >= 2 and normalized[0] == normalized[-1] == "'":
+        normalized = normalized[1:-1]
+    payload = json.loads(normalized)
+    if not isinstance(payload, dict):
+        raise ValueError("Firebase service account JSON must be an object.")
+    return payload
+
+
 def initialize_firebase() -> bool:
     if firebase_admin._apps:
         return True
@@ -18,7 +28,7 @@ def initialize_firebase() -> bool:
 
     try:
         if credentials_json:
-            payload = json.loads(credentials_json)
+            payload = _parse_credentials_json(credentials_json)
             firebase_admin.initialize_app(credentials.Certificate(payload))
             return True
 

@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 
 from dotenv import load_dotenv
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, create_engine, text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, text
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
@@ -111,6 +111,16 @@ class ChatEvent(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
 
 
+class CD(Base):
+    __tablename__ = "cds"
+    __table_args__ = (UniqueConstraint("artist", "name", name="uq_cd_artist_name"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(300), nullable=False)
+    artist = Column(String(300), nullable=False)
+    have = Column(Boolean, nullable=False, default=False)
+
+
 def _switch_engine(url: str) -> None:
     global engine, ACTIVE_DATABASE_URL
     engine = _new_engine(url)
@@ -147,6 +157,24 @@ def init_db() -> None:
     except SQLAlchemyError as exc:
         if not _switch_to_fallback("startup", exc):
             raise
+    seed_cds()
+
+
+def seed_cds() -> None:
+    """Populate a fresh CD table once without overwriting later user edits."""
+    from cd_seed import CD_SEED
+
+    db = SessionLocal()
+    try:
+        if db.query(CD.id).first() is None:
+            db.add_all(CD(name=name, artist=artist, have=have) for name, artist, have in CD_SEED)
+            db.commit()
+            logger.info("Seeded %s CDs.", len(CD_SEED))
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
 
 
 def get_db_session() -> Session:

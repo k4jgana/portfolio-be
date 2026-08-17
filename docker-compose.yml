@@ -1,11 +1,26 @@
 version: "3.8"
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: portfolio
+      POSTGRES_USER: portfolio
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-portfolio_local_password}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U portfolio -d portfolio"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   portfolio-be:
     build: .
     env_file: .env
     environment:
-      DATABASE_URL: sqlite:////app/data/chatbot.db
+      DATABASE_URL: postgresql+psycopg2://portfolio:${POSTGRES_PASSWORD:-portfolio_local_password}@postgres:5432/portfolio
       DATABASE_FALLBACK_URL: sqlite:////app/data/chatbot.db
     ports:
       - "8000:8000"
@@ -22,6 +37,10 @@ services:
       resources:
         limits:
           memory: 512M
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
+  postgres-data:
   chatbot-data:
