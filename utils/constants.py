@@ -129,17 +129,3 @@ def get_spotify_client():
 
 
 lb = LetterboxdService()
-
-
-
-available_paths = {
-    "knowledge": "Use this path when the user asks questions specifically about "
-                 "Nenad Kajgana, his career, beliefs and etc.",
-    "music":"Use this path when the user asks questions specifically about "
-            "music related stuff, recommendations, top artists/albums of Nenad Kajgana etc "
-            "Basically anything music related",
-    "movie":"Use this path when the user asks questions specifically about "
-            "movie related stuff, recommendations, top movies of Nenad Kajgana, his personal favorites etc "
-            "Basically anything movie related"
-}
-

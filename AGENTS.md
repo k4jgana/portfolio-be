@@ -9,15 +9,18 @@ A FastAPI backend (Python 3.10+) for answering questions about movies and music 
 
 ## How does it work?
 
-- `/ask` endpoint takes a query and history, routes to the right agent (music, movie, knowledge, etc) via a router agent
-- Responses are retrieved using Pinecone vectors (personal knowledge) + live lookups from Spotify and Letterboxd as needed
+- `/ask` selects one of two cached LangGraph workflows: guest/read-only or verified-admin.
+- The explicit graph loops between a supervisor and `ToolNode` until the supervisor returns a final answer.
+- Three typed façade tools return structured knowledge, music, movie, and CD facts without writing prose.
+- Only the supervisor writes user-facing text; only the admin graph includes mutation tools.
 - All settings/API keys live in a .env file (see README)
 
 ## Main components
 
 - app.py: FastAPI app with /ask endpoint
-- runner.py: Runs agent graph step/logic
-- agents/: router and worker agents
+- runner.py: Selects a compiled graph and returns its final assistant message
+- agents/supervisor_agent.py: Supervisor model invocation
+- graphs/user_chat.py: StateGraph and fixed guest/admin allowlists
 - services/: Integrations for 3rd-party APIs
 - utils/: constants and prompt loader helpers
 - prompts/: agent prompt templates

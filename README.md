@@ -1,18 +1,34 @@
 # Nenad Kajgana — AI Assistant
 
-A FastAPI + LangChain chatbot that answers questions about movies and music based on Nenad’s personal listening and watching data.
-It uses LangGraph for agent orchestration, LangChain tools, Pinecone for vector storage, OpenAI embeddings / LLMs, Letterboxd and Spotify tools for personalized recommendations.
+A FastAPI + LangGraph chatbot that answers questions about Nenad, movies, and music based on his personal data.
+An explicit supervisor/tool loop retrieves read-only facts as needed and produces one final response.
 
 ---
 
 ## Features
 
-* Router / worker agents architecture (router, knowledge, main, music, movie).
-* Retrieval from Pinecone vector store (knowledge about Nenad).
-* Movie recommendations powered by Letterboxd tools.
-* Music recommendations powered by Spotify (your account).
+* Explicit LangGraph `StateGraph` with one supervisor and one tool-execution node.
+* Structured knowledge, movie, music, and CD retrieval capabilities.
+* Separate cached guest and admin graphs with fixed tool allowlists.
+* Admin chat mutations authorized only by a verified Firebase `MASTER_EMAIL` claim.
 * Single endpoint to query the agent: `POST /ask`.
 * Ready for local development and hosting (e.g. Render).
+
+---
+
+## Assistant graph
+
+```mermaid
+flowchart LR
+    START([START]) --> supervisor[Supervisor]
+    supervisor -->|Requests one or more capabilities| tools[ToolNode]
+    tools -->|Returns structured context| supervisor
+    supervisor -->|No capability requests; final answer ready| END([END])
+```
+
+The guest graph binds only the knowledge, music, and movie read-only capabilities. The admin graph
+uses the same loop but additionally binds CD creation, CD ownership updates, and knowledge upserts.
+The two variants are compiled once and cached with separate fixed allowlists.
 
 ---
 
@@ -23,15 +39,17 @@ It uses LangGraph for agent orchestration, LangChain tools, Pinecone for vector 
 ├─ app.py                       # FastAPI app
 ├─ runner.py                    # orchestration entry (run)
 ├─ agents/
-│  ├─ router_agent.py
-│  ├─ knowledge_agent.py
-│  ├─ main_agent.py
-│  ├─ music_recc_agent.py
-│  └─ movie_recc_agent.py
-├─ services/                    #letterbox, spotify services to fetch data
+│  └─ supervisor_agent.py       # one model-driven supervisor node
+├─ graphs/
+│  └─ user_chat.py              # supervisor ↔ tool loop and allowlists
+├─ prompts/
+│  └─ supervisor.mustache
+├─ services/                    # data integrations
 ├─ tools/
-│  ├─ spotify.py
-│  └─ letterboxd.py
+│  ├─ index.py                  # knowledge retrieval
+│  ├─ spotify.py                # normalized music context
+│  ├─ letterboxd.py             # normalized movie context
+│  └─ master_tools.py           # admin-only mutations
 ├─ utils/
 │  ├─ constants.py              # embeddings, vector_store, llm, spotify client wrapper
 │  └─ loader.py                 # prompt loader
@@ -103,7 +121,7 @@ MONTHLY_REPORT_ENABLED=false
 TRUSTED_HOSTS=localhost,127.0.0.1,nenadkajgana.com
 TRUST_X_FORWARDED_FOR=false  # set true only behind a trusted proxy
 
-# Required for admin analytics authorization
+# Required for admin analytics and protected chat actions
 MASTER_EMAIL=you@example.com
 # Optional separate CD manager account; defaults to MASTER_EMAIL
 CD_ADMIN_EMAIL=you@example.com
@@ -150,6 +168,10 @@ Response:
   "chat_session_id": "session_abc"
 }
 ```
+
+The request `email` field remains accepted for compatibility but never grants access. Protected chat
+actions are exposed only when the bearer token is valid, its email is verified, and its normalized
+email exactly matches `MASTER_EMAIL`. Guests and all other authenticated users receive the read-only graph.
 
 ### Analytics endpoint (admin only)
 

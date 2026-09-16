@@ -233,6 +233,17 @@ def _verify_admin_request(request: Request) -> str:
     return email
 
 
+def _is_admin_claims(claims: dict) -> bool:
+    """Authorize chat mutations from verified identity claims only."""
+    master_email = (MASTER_EMAIL or "").strip().lower()
+    email = (claims.get("email") or "").strip().lower()
+    return bool(
+        master_email
+        and claims.get("email_verified") is True
+        and email == master_email
+    )
+
+
 # -----------------------------
 # Explicit OPTIONS handler for /ask (preflight)
 # -----------------------------
@@ -283,6 +294,7 @@ async def ask(query_request: QueryRequest, request: Request):
         visitor_id = normalize_identifier(None, prefix="visitor")
     user_email = "guest"
     firebase_uid = None
+    is_admin = False
     request_id = None
 
     try:
@@ -324,6 +336,7 @@ async def ask(query_request: QueryRequest, request: Request):
             token_email = (claims.get("email") or "").strip().lower()
             if token_email and claims.get("email_verified"):
                 user_email = token_email
+            is_admin = _is_admin_claims(claims)
 
         rate_limit_key = f"{firebase_uid or 'anonymous'}:{ip_address}"
         if not _allow_request(rate_limit_key):
@@ -390,8 +403,10 @@ async def ask(query_request: QueryRequest, request: Request):
 
         persisted_history = get_recent_history(db, chat_session_id=chat_session_id, max_messages=12)
         history = persisted_history if persisted_history else query_request.history
-        final_state = run(query_request.query, history, user_email)
-        answer = final_state["messages"][-1].content if final_state["messages"] else ""
+        final_message = run(query_request.query, history, is_admin=is_admin)
+        answer = final_message.content
+        if not isinstance(answer, str):
+            raise RuntimeError("The assistant returned an unsupported response format.")
         save_turn_pair(db, chat_session_id=chat_session_id, user_query=query_request.query, answer=answer)
 
         latency_ms = int((time.monotonic() - started_at) * 1000)

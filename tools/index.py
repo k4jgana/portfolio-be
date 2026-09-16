@@ -1,32 +1,62 @@
-from langchain.tools import tool
-from utils.constants import vector_store
+import logging
+from typing import Annotated, Any
+
 import pandas as pd
-import tqdm, logging
+import tqdm
+from langchain.tools import tool
+from pydantic import Field
+
+from utils.constants import vector_store
 
 logger = logging.getLogger(__name__)
 
+
 @tool
-def retrieve_context(query: str) -> str:
+def search_nenad_knowledge(
+    query: Annotated[str, Field(min_length=1, max_length=2000)],
+) -> dict[str, Any]:
+    """Search verified information about Nenad's background, work, and interests.
+
+    Use this before making a factual claim about Nenad. The result contains raw
+    matching passages and metadata; treat an empty result as unknown information.
     """
-    Retrieve information about Nenad Kajgana from the knowledge base.
+    logger.info("Searching Nenad knowledge for query=%r", query)
+    try:
+        retrieved_docs = vector_store.similarity_search(query, k=10)
+    except Exception:
+        logger.exception("Knowledge retrieval failed")
+        return {
+            "status": "error",
+            "source": "nenad_knowledge",
+            "items": [],
+            "message": "Nenad's background information is temporarily unavailable.",
+        }
 
-    Args:
-        query: The search query
-
-    Returns:
-        Retrieved context as a formatted string
-    """
-    retrieved_docs = vector_store.similarity_search(query, k=10)
-
-    serialized = "\n\n".join(
-        f"Source: {doc.metadata.get('source', 'Unknown')}\nContent: {doc.page_content}"
+    items = [
+        {
+            "content": doc.page_content,
+            "metadata": _json_safe_metadata(doc.metadata),
+        }
         for doc in retrieved_docs
-    )
+    ]
+    return {
+        "status": "success" if items else "empty",
+        "source": "nenad_knowledge",
+        "items": items,
+    }
 
-    return serialized if serialized else "No relevant information found."
 
-
-
+def _json_safe_metadata(metadata: dict) -> dict[str, Any]:
+    """Keep metadata useful and serializable for a tool response."""
+    safe: dict[str, Any] = {}
+    for key, value in metadata.items():
+        if value is None or isinstance(value, (str, int, float, bool)):
+            safe[str(key)] = value
+        elif isinstance(value, (list, tuple)):
+            safe[str(key)] = [str(item) for item in value]
+        else:
+            safe[str(key)] = str(value)
+    return safe
 
 def upsert(csv_path: str = "data.csv"):
     """

@@ -1,54 +1,59 @@
-import logging
-from langgraph.graph import StateGraph
-from agents.knowledge_agent import knowledge_agent
-from agents.main_agent import main_agent
-from agents.movie_recc_agent import movie_recommendations_agent
-from agents.router_agent import router_agent
-from agents.music_recc_agent import music_recommendations_agent
-from agents.master_controller_agent import master_controller_agent
+from functools import lru_cache
+from typing import Literal
+
+from langchain_core.messages import AIMessage
+from langchain_core.tools import BaseTool
+from langgraph.graph import END, START, StateGraph
+from langgraph.prebuilt import ToolNode
+
+from agents.supervisor_agent import build_supervisor_node
 from schemas import AgentState
-from utils.constants import MASTER_EMAIL
+from tools.index import search_nenad_knowledge
+from tools.letterboxd import retrieve_movie_context
+from tools.master_tools import add_new_cd, update_cd_have_status, upsert_record
+from tools.spotify import retrieve_music_context
+from utils.constants import llm
 
-logger = logging.getLogger(__name__)
+READ_ONLY_TOOLS: tuple[BaseTool, ...] = (
+    search_nenad_knowledge,
+    retrieve_music_context,
+    retrieve_movie_context,
+)
+ADMIN_TOOLS: tuple[BaseTool, ...] = (
+    *READ_ONLY_TOOLS,
+    add_new_cd,
+    update_cd_have_status,
+    upsert_record,
+)
 
-def create_graph(user_email: str):
-    """
-    Dynamically builds the agent graph depending on who the user is.
-    Master email gets privileged 'master_controller_agent'.
-    """
+
+def _next_node(state: AgentState) -> Literal["tools", "__end__"]:
+    last_message = state["messages"][-1]
+    if isinstance(last_message, AIMessage) and last_message.tool_calls:
+        return "tools"
+    return END
+
+
+@lru_cache(maxsize=2)
+def create_graph(is_admin: bool = False):
+    """Compile and cache a graph with a fixed, authorization-safe allowlist."""
+    allowed_tools = ADMIN_TOOLS if is_admin else READ_ONLY_TOOLS
     workflow = StateGraph(AgentState)
-
-    # Core agents
-    workflow.add_node("main_agent", main_agent)
-    workflow.add_node("router_agent", router_agent)
-    workflow.add_node("knowledge_agent", knowledge_agent)
-    workflow.add_node("music_recommendations_agent", music_recommendations_agent)
-    workflow.add_node("movie_recommendations_agent", movie_recommendations_agent)
-    workflow.set_entry_point("router_agent")
-
-    routing_map = {
-        "knowledge": "knowledge_agent",
-        "main": "main_agent",
-        "music": "music_recommendations_agent",
-        "movie": "movie_recommendations_agent",
-    }
-
-    if user_email == MASTER_EMAIL:
-        workflow.add_node("master_controller_agent", master_controller_agent)
-        routing_map["master"] = "master_controller_agent"
-
+    workflow.add_node("supervisor", build_supervisor_node(llm, allowed_tools))
+    workflow.add_node("tools", ToolNode(list(allowed_tools)))
+    workflow.add_edge(START, "supervisor")
     workflow.add_conditional_edges(
-        "router_agent",
-        lambda state: state["next_step"],
-        routing_map
+        "supervisor",
+        _next_node,
+        {"tools": "tools", END: END},
     )
-
-    # Return routes
-    workflow.add_edge("knowledge_agent", "main_agent")
-    workflow.add_edge("music_recommendations_agent", "main_agent")
-    workflow.add_edge("movie_recommendations_agent", "main_agent")
-
-    if user_email == MASTER_EMAIL:
-        workflow.add_edge("master_controller_agent", "main_agent")
-
+    workflow.add_edge("tools", "supervisor")
     return workflow.compile()
+
+
+def get_guest_graph():
+    return create_graph(False)
+
+
+def get_admin_graph():
+    return create_graph(True)

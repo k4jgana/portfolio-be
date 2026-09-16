@@ -11,13 +11,21 @@ def _find_cd(db, album: str, artist: str | None = None):
 
 
 def get_cds() -> str:
+    return "\n".join(
+        f"{cd['artist']} - {cd['album']} - {str(cd['have']).lower()}"
+        for cd in get_cd_records()
+    )
+
+
+def get_cd_records() -> list[dict]:
+    """Return the collection as records suitable for internal tool results."""
     db = get_db_session()
     try:
         cds = db.query(CD).order_by(CD.id).all()
-        return "\n".join(
-            f"{cd.artist} - {cd.name} - {str(cd.have).lower()}"
+        return [
+            {"id": cd.id, "artist": cd.artist, "album": cd.name, "have": cd.have}
             for cd in cds
-        )
+        ]
     finally:
         db.close()
 
