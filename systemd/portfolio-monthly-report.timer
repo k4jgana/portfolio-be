@@ -1,0 +1,11 @@
+[Unit]
+Description=Check hourly for due Portfolio monthly visitor-question reports
+
+[Timer]
+OnCalendar=*-*-* *:00:00 UTC
+Persistent=true
+Unit=portfolio-monthly-report.service
+
+[Install]
+WantedBy=timers.target
+

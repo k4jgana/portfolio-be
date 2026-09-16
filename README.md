@@ -92,6 +92,13 @@ DATABASE_FALLBACK_URL=sqlite:///./chatbot.db
 RATE_LIMIT_REQUESTS=30
 RATE_LIMIT_WINDOW_SECONDS=60
 
+# Monthly visitor-question report via Resend
+RESEND_API_KEY=re_...
+MONTHLY_REPORT_TO=reports-recipient@example.com
+MONTHLY_REPORT_FROM="Portfolio Reports <questions@reports.nenadkajgana.com>"
+MONTHLY_REPORT_START_MONTH=2026-09
+MONTHLY_REPORT_ENABLED=false
+
 # Optional API hardening
 TRUSTED_HOSTS=localhost,127.0.0.1,nenadkajgana.com
 TRUST_X_FORWARDED_FOR=false  # set true only behind a trusted proxy
@@ -148,6 +155,41 @@ Response:
 
 `GET /analytics/summary` requires a valid Firebase `Authorization: Bearer <id_token>` header
 for the configured `MASTER_EMAIL` (and a verified email claim). It returns visitor/session/message/event totals and a 24h window summary.
+
+### Monthly visitor-question report
+
+The backend records every accepted `/ask` submission before processing it. The report covers the
+previous UTC calendar month, groups questions by visitor and session, and attaches all questions as
+CSV. Failed submissions are labeled with their outcome. Empty months do not send an email.
+
+Preview a month without sending or writing report state:
+
+```bash
+docker exec portfolio-be python -m monthly_report preview 2026-09
+```
+
+Send a synthetic delivery test (this ignores `MONTHLY_REPORT_ENABLED`):
+
+```bash
+docker exec portfolio-be python -m monthly_report send-test
+```
+
+After the test arrives, set `MONTHLY_REPORT_ENABLED=true` in `.env`, redeploy the backend so the
+container receives the setting, and install the hourly persistent systemd timer:
+
+```bash
+./scripts/install_monthly_report_timer.sh
+```
+
+The installer creates a persistent user timer by default and installs a system timer when run as
+root. The user account must be allowed to run Docker and have systemd lingering enabled.
+
+Inspect scheduling and delivery logs with:
+
+```bash
+systemctl --user status portfolio-monthly-report.timer
+journalctl --user -u portfolio-monthly-report.service
+```
 
 `POST /ask` now enforces session ownership: if a `chat_session_id` is reused with a different
 `visitor_id`, the API responds with `409`.

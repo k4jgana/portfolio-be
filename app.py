@@ -18,6 +18,8 @@ from persistence import (
     ChatEvent,
     ChatMessage,
     ChatSession,
+    complete_question_submission,
+    create_question_submission,
     get_db_session,
     Visitor,
     get_recent_history,
@@ -166,6 +168,27 @@ def _safe_log_chat_event(db: Session, **kwargs) -> None:
         logger.exception("Failed to log chat event.")
 
 
+def _safe_complete_question_submission(
+    db: Session,
+    *,
+    request_id: str | None,
+    outcome: str,
+    status_code: int,
+) -> None:
+    if not request_id:
+        return
+    try:
+        complete_question_submission(
+            db,
+            request_id=request_id,
+            outcome=outcome,
+            status_code=status_code,
+        )
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to update question submission %s.", request_id)
+
+
 def _open_db_session() -> Session:
     try:
         return get_db_session()
@@ -260,8 +283,15 @@ async def ask(query_request: QueryRequest, request: Request):
         visitor_id = normalize_identifier(None, prefix="visitor")
     user_email = "guest"
     firebase_uid = None
+    request_id = None
 
     try:
+        request_id = create_question_submission(
+            db,
+            visitor_id=visitor_id,
+            chat_session_id=chat_session_id,
+            question=query_request.query,
+        )
         token = _extract_bearer_token(request)
         if token:
             try:
@@ -281,6 +311,12 @@ async def ask(query_request: QueryRequest, request: Request):
                     origin=origin,
                     user_email=user_email,
                     error_detail=str(exc),
+                )
+                _safe_complete_question_submission(
+                    db,
+                    request_id=request_id,
+                    outcome="auth_failed",
+                    status_code=401,
                 )
                 raise HTTPException(status_code=401, detail="Invalid authentication token.") from exc
 
@@ -305,6 +341,12 @@ async def ask(query_request: QueryRequest, request: Request):
                 origin=origin,
                 user_email=user_email,
                 error_detail="Too many requests.",
+            )
+            _safe_complete_question_submission(
+                db,
+                request_id=request_id,
+                outcome="rate_limited",
+                status_code=429,
             )
             raise HTTPException(status_code=429, detail="Too many requests. Please retry shortly.")
 
@@ -335,6 +377,12 @@ async def ask(query_request: QueryRequest, request: Request):
                 user_email=user_email,
                 error_detail=str(exc),
             )
+            _safe_complete_question_submission(
+                db,
+                request_id=request_id,
+                outcome="session_mismatch",
+                status_code=409,
+            )
             raise HTTPException(
                 status_code=409,
                 detail="Session identifier does not match this visitor.",
@@ -361,6 +409,12 @@ async def ask(query_request: QueryRequest, request: Request):
             origin=origin,
             user_email=user_email,
         )
+        _safe_complete_question_submission(
+            db,
+            request_id=request_id,
+            outcome="success",
+            status_code=200,
+        )
         return QueryResponse(answer=answer, visitor_id=visitor_id, chat_session_id=chat_session_id)
 
     except HTTPException:
@@ -383,6 +437,12 @@ async def ask(query_request: QueryRequest, request: Request):
             origin=origin,
             user_email=user_email,
             error_detail=str(e),
+        )
+        _safe_complete_question_submission(
+            db,
+            request_id=request_id,
+            outcome="error",
+            status_code=status_code,
         )
         logger.exception("Error processing query: %s", e)
         if provider_detail:

@@ -111,6 +111,53 @@ class ChatEvent(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
 
 
+class QuestionSubmission(Base):
+    __tablename__ = "question_submissions"
+
+    request_id = Column(String(64), primary_key=True)
+    visitor_id = Column(String(128), nullable=False, index=True)
+    chat_session_id = Column(String(128), nullable=False, index=True)
+    question = Column(Text, nullable=False)
+    outcome = Column(String(64), nullable=False, default="started", index=True)
+    status_code = Column(Integer, nullable=True)
+    submitted_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, index=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class MonthlyReportDelivery(Base):
+    __tablename__ = "monthly_report_deliveries"
+    __table_args__ = (
+        UniqueConstraint("report_month", "recipient", "part_number", name="uq_monthly_report_part"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    report_month = Column(String(7), nullable=False, index=True)
+    recipient = Column(String(320), nullable=False)
+    part_number = Column(Integer, nullable=False)
+    total_parts = Column(Integer, nullable=False)
+    status = Column(String(32), nullable=False, index=True)
+    subject = Column(Text, nullable=False)
+    text_body = Column(Text, nullable=False)
+    html_body = Column(Text, nullable=False)
+    csv_base64 = Column(Text, nullable=True)
+    payload_hash = Column(String(64), nullable=False)
+    provider_message_id = Column(String(128), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class MonthlyReportAttempt(Base):
+    __tablename__ = "monthly_report_attempts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    delivery_id = Column(Integer, ForeignKey("monthly_report_deliveries.id"), nullable=False, index=True)
+    attempted_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    outcome = Column(String(32), nullable=False)
+    http_status = Column(Integer, nullable=True)
+    provider_message_id = Column(String(128), nullable=True)
+    detail = Column(Text, nullable=True)
+
+
 class CD(Base):
     __tablename__ = "cds"
     __table_args__ = (UniqueConstraint("artist", "name", name="uq_cd_artist_name"),)
@@ -250,6 +297,10 @@ def upsert_visitor_and_session(
             last_user_agent=user_agent,
         )
         db.add(visitor)
+        # ChatSession references Visitor, but the models do not define an ORM
+        # relationship that lets SQLAlchemy infer the required insert order.
+        # Flush the parent row before adding a session for a new visitor.
+        db.flush()
     else:
         if user_email and user_email != "guest":
             visitor.user_email = user_email
@@ -283,6 +334,49 @@ def upsert_visitor_and_session(
 def save_turn_pair(db: Session, chat_session_id: str, user_query: str, answer: str) -> None:
     db.add(ChatMessage(chat_session_id=chat_session_id, role="user", content=user_query))
     db.add(ChatMessage(chat_session_id=chat_session_id, role="ai", content=answer))
+    db.commit()
+
+
+def create_question_submission(
+    db: Session,
+    *,
+    visitor_id: str,
+    chat_session_id: str,
+    question: str,
+) -> str:
+    request_id = uuid.uuid4().hex
+    db.add(
+        QuestionSubmission(
+            request_id=request_id,
+            visitor_id=visitor_id,
+            chat_session_id=chat_session_id,
+            question=question,
+            outcome="started",
+            submitted_at=utcnow(),
+        )
+    )
+    db.commit()
+    return request_id
+
+
+def complete_question_submission(
+    db: Session,
+    *,
+    request_id: str,
+    outcome: str,
+    status_code: int,
+) -> None:
+    submission = (
+        db.query(QuestionSubmission)
+        .filter(QuestionSubmission.request_id == request_id)
+        .first()
+    )
+    if submission is None:
+        logger.error("Question submission %s was not found while setting outcome.", request_id)
+        return
+    submission.outcome = outcome
+    submission.status_code = status_code
+    submission.completed_at = utcnow()
     db.commit()
 
 

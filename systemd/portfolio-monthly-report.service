@@ -1,0 +1,6 @@
+[Unit]
+Description=Send due Portfolio monthly visitor-question reports
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker exec portfolio-be python -m monthly_report send-due
