@@ -2,6 +2,8 @@ import logging
 import os
 import threading
 import time
+import json
+from contextlib import asynccontextmanager
 from collections import defaultdict, deque
 from datetime import timedelta
 
@@ -12,6 +14,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from openai import AuthenticationError, RateLimitError
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
+from langchain_core.messages import AIMessage, HumanMessage
 
 from auth_verifier import verify_id_token
 from persistence import (
@@ -22,18 +25,23 @@ from persistence import (
     create_question_submission,
     get_db_session,
     Visitor,
-    get_recent_history,
+    get_recent_messages,
     init_db,
     log_chat_event,
     utcnow,
     normalize_identifier,
     save_turn_pair,
+    create_pending_admin_action,
+    claim_pending_admin_action,
+    complete_pending_admin_action,
     SessionOwnershipError,
     upsert_visitor_and_session,
 )
 from runner import run
-from schemas import QueryResponse, QueryRequest
+from schemas import PendingActionResponse, QueryResponse, QueryRequest
 from cd_routes import router as cd_router
+from graphs.checkpointing import close_checkpointer, get_checkpointer
+from tools.master_tools import execute_admin_action
 from utils.constants import MASTER_EMAIL
 
 # -----------------------------
@@ -48,7 +56,15 @@ logger = logging.getLogger(__name__)
 # -----------------------------
 # FastAPI app
 # -----------------------------
-app = FastAPI(title="Nenad Kajgana AI Assistant")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    init_db()
+    get_checkpointer()
+    yield
+    close_checkpointer()
+
+
+app = FastAPI(title="Nenad Kajgana AI Assistant", lifespan=lifespan)
 app.include_router(cd_router)
 trusted_hosts = [host.strip() for host in os.getenv("TRUSTED_HOSTS", "").split(",") if host.strip()]
 if trusted_hosts:
@@ -94,14 +110,6 @@ app.add_middleware(
     allow_headers=["*"],              # allow Content-Type, Authorization...
     allow_credentials=True
 )
-
-# -----------------------------
-# Startup hook
-# -----------------------------
-@app.on_event("startup")
-def startup() -> None:
-    init_db()
-
 
 @app.get("/health/live")
 async def health_live():
@@ -189,6 +197,17 @@ def _safe_complete_question_submission(
         logger.exception("Failed to update question submission %s.", request_id)
 
 
+def _history_messages(rows: list[dict[str, str]]) -> list[HumanMessage | AIMessage]:
+    """Rehydrate prior turns as role-preserving LangChain messages."""
+    messages: list[HumanMessage | AIMessage] = []
+    for row in rows:
+        if row["role"] == "user":
+            messages.append(HumanMessage(id=row["id"], content=row["content"]))
+        elif row["role"] == "ai":
+            messages.append(AIMessage(id=row["id"], content=row["content"]))
+    return messages
+
+
 def _open_db_session() -> Session:
     try:
         return get_db_session()
@@ -265,7 +284,7 @@ async def preflight(request: Request):
 # POST /ask endpoint
 # -----------------------------
 @app.post("/ask", response_model=QueryResponse)
-async def ask(query_request: QueryRequest, request: Request):
+def ask(query_request: QueryRequest, request: Request):
     """
     Endpoint to send a user query to the agent.
     """
@@ -401,13 +420,34 @@ async def ask(query_request: QueryRequest, request: Request):
                 detail="Session identifier does not match this visitor.",
             ) from exc
 
-        persisted_history = get_recent_history(db, chat_session_id=chat_session_id, max_messages=12)
-        history = persisted_history if persisted_history else query_request.history
-        final_message = run(query_request.query, history, is_admin=is_admin)
-        answer = final_message.content
+        history_messages = _history_messages(
+            get_recent_messages(db, chat_session_id=chat_session_id, max_messages=12)
+        )
+        run_result = run(
+            query_request.query,
+            chat_session_id=chat_session_id,
+            history_messages=history_messages,
+            is_admin=is_admin,
+        )
+        answer = run_result.message.content
         if not isinstance(answer, str):
             raise RuntimeError("The assistant returned an unsupported response format.")
         save_turn_pair(db, chat_session_id=chat_session_id, user_query=query_request.query, answer=answer)
+
+        pending_action = None
+        if run_result.pending_proposal:
+            pending = create_pending_admin_action(
+                db,
+                chat_session_id=chat_session_id,
+                requested_by=user_email,
+                action=run_result.pending_proposal.action,
+                payload=run_result.pending_proposal.model_dump(exclude={"action"}),
+            )
+            pending_action = PendingActionResponse(
+                action_id=pending.action_id,
+                action=run_result.pending_proposal.action,
+                summary=run_result.proposal_summary or "Change awaiting confirmation.",
+            )
 
         latency_ms = int((time.monotonic() - started_at) * 1000)
         _safe_log_chat_event(
@@ -430,7 +470,12 @@ async def ask(query_request: QueryRequest, request: Request):
             outcome="success",
             status_code=200,
         )
-        return QueryResponse(answer=answer, visitor_id=visitor_id, chat_session_id=chat_session_id)
+        return QueryResponse(
+            answer=answer,
+            visitor_id=visitor_id,
+            chat_session_id=chat_session_id,
+            pending_action=pending_action,
+        )
 
     except HTTPException:
         raise
@@ -463,6 +508,55 @@ async def ask(query_request: QueryRequest, request: Request):
         if provider_detail:
             raise HTTPException(status_code=503, detail=provider_detail) from e
         raise HTTPException(status_code=500, detail="Internal server error.")
+    finally:
+        db.close()
+
+
+@app.post("/admin/actions/{action_id}/confirm")
+def confirm_admin_action(action_id: str, request: Request):
+    """Execute one previously proposed action after explicit admin confirmation."""
+    admin_email = _verify_admin_request(request)
+    db = _open_db_session()
+    try:
+        pending, claimed = claim_pending_admin_action(
+            db,
+            action_id=action_id,
+            requested_by=admin_email,
+        )
+        if pending is None:
+            raise HTTPException(status_code=404, detail="Pending action not found.")
+        if pending.status == "executing" and not claimed:
+            raise HTTPException(status_code=409, detail="This action is already being executed.")
+        if not claimed:
+            return {
+                "action_id": pending.action_id,
+                "status": pending.status,
+                "result": pending.result,
+            }
+
+        try:
+            payload = json.loads(pending.payload)
+        except json.JSONDecodeError as exc:
+            completed = complete_pending_admin_action(
+                db,
+                action_id=action_id,
+                status="error",
+                result="The stored action was invalid and was not executed.",
+            )
+            raise HTTPException(status_code=500, detail=completed.result) from exc
+
+        outcome = execute_admin_action(pending.action, payload)
+        completed = complete_pending_admin_action(
+            db,
+            action_id=action_id,
+            status=outcome["status"],
+            result=outcome["message"],
+        )
+        return {
+            "action_id": completed.action_id,
+            "status": completed.status,
+            "result": completed.result,
+        }
     finally:
         db.close()
 

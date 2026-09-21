@@ -6,7 +6,7 @@ import tqdm
 from langchain.tools import tool
 from pydantic import Field
 
-from utils.constants import vector_store
+from utils.constants import get_vector_store
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ def search_nenad_knowledge(
     """
     logger.info("Searching Nenad knowledge for query=%r", query)
     try:
-        retrieved_docs = vector_store.similarity_search(query, k=10)
+        retrieved_docs = get_vector_store().similarity_search_with_score(query, k=8)
     except Exception:
         logger.exception("Knowledge retrieval failed")
         return {
@@ -34,10 +34,11 @@ def search_nenad_knowledge(
 
     items = [
         {
-            "content": doc.page_content,
+            "content": doc.page_content[:4000],
             "metadata": _json_safe_metadata(doc.metadata),
+            "score": float(score),
         }
-        for doc in retrieved_docs
+        for doc, score in retrieved_docs
     ]
     return {
         "status": "success" if items else "empty",
@@ -72,6 +73,6 @@ def upsert(csv_path: str = "data.csv"):
     for i, row in tqdm(df.iterrows(), total=len(df), desc="Embedding & upserting"):
         combined_text = f"{row['title']} {row['text']}"
         metadata = {"title": row["title"], "text": row["text"]}
-        vector_store.add_texts([combined_text], metadatas=[metadata])
+        get_vector_store().add_texts([combined_text], metadatas=[metadata])
 
     print("✅ Data successfully embedded and upserted into Pinecone!")

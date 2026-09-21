@@ -5,7 +5,7 @@ from typing import Annotated, Any, Literal
 from langchain.tools import tool
 from pydantic import Field
 
-from utils.constants import lb
+from utils.constants import get_letterboxd_service
 
 logger = logging.getLogger(__name__)
 
@@ -40,17 +40,17 @@ def retrieve_movie_context(
 
     try:
         if mode == "recent":
-            items = lb.get_recent_ratings(limit=limit)[:limit]
+            items = get_letterboxd_service().get_recent_ratings(limit=limit)[:limit]
         elif mode == "genre":
-            items = lb.get_ratings_by_genre(genre=genre.strip())
+            items = get_letterboxd_service().get_ratings_by_genre(genre=genre.strip())
             random.shuffle(items)
             items = items[:limit]
         elif mode == "personal_picks":
-            items = lb.get_nenad_personal_picks()
+            items = get_letterboxd_service().get_nenad_personal_picks()
             random.shuffle(items)
             items = items[:limit]
         else:
-            items = lb.get_ratings_by_year(year=year)[:limit]
+            items = get_letterboxd_service().get_ratings_by_year(year=year)[:limit]
     except Exception:
         logger.exception("Movie retrieval failed for mode=%s", mode)
         return {

@@ -35,10 +35,13 @@ def set_have(artist: str, album: str, have: bool):
     try:
         cd = _find_cd(db, album, artist)
         if not cd:
-            return "CD not found"
+            return {"status": "not_found", "message": "CD not found."}
         cd.have = have
         db.commit()
-        return f"Updated '{artist} - {album}' have status to {have}."
+        return {
+            "status": "success",
+            "message": f"Updated '{cd.artist} - {cd.name}' ownership status.",
+        }
     finally:
         db.close()
 
@@ -47,9 +50,10 @@ def add_cd(artist: str, album: str, have: bool = False):
     db = get_db_session()
     try:
         if _find_cd(db, album, artist):
-            return f"CD '{artist} - {album}' already exists."
-        db.add(CD(name=album.strip(), artist=artist.strip(), have=have))
+            return {"status": "exists", "message": "That CD already exists."}
+        cd = CD(name=album.strip(), artist=artist.strip(), have=have)
+        db.add(cd)
         db.commit()
-        return f"Added CD: {artist} - {album} (have={have})"
+        return {"status": "success", "message": f"Added '{cd.artist} - {cd.name}'."}
     finally:
         db.close()

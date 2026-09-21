@@ -1,7 +1,7 @@
 # Nenad Kajgana — AI Assistant
 
 A FastAPI + LangGraph chatbot that answers questions about Nenad, movies, and music based on his personal data.
-An explicit supervisor/tool loop retrieves read-only facts as needed and produces one final response.
+An explicit supervisor/tool loop retrieves facts as needed and produces one final response.
 
 ---
 
@@ -10,7 +10,9 @@ An explicit supervisor/tool loop retrieves read-only facts as needed and produce
 * Explicit LangGraph `StateGraph` with one supervisor and one tool-execution node.
 * Structured knowledge, movie, music, and CD retrieval capabilities.
 * Separate cached guest and admin graphs with fixed tool allowlists.
-* Admin chat mutations authorized only by a verified Firebase `MASTER_EMAIL` claim.
+* Typed, role-preserving chat history with optional PostgreSQL LangGraph checkpoints.
+* Admin chat requests can only create a validated write proposal; a separate authenticated confirmation executes it.
+* Explicit graph step budget, model retries, and upstream request timeouts.
 * Single endpoint to query the agent: `POST /ask`.
 * Ready for local development and hosting (e.g. Render).
 
@@ -27,7 +29,9 @@ flowchart LR
 ```
 
 The guest graph binds only the knowledge, music, and movie read-only capabilities. The admin graph
-uses the same loop but additionally binds CD creation, CD ownership updates, and knowledge upserts.
+uses the same loop but additionally binds a non-writing proposal capability. It cannot directly create
+CDs, change CD ownership, or store knowledge. The API persists that proposal and only
+`POST /admin/actions/{action_id}/confirm`, authenticated as `MASTER_EMAIL`, executes it.
 The two variants are compiled once and cached with separate fixed allowlists.
 
 ---
@@ -41,7 +45,8 @@ The two variants are compiled once and cached with separate fixed allowlists.
 ├─ agents/
 │  └─ supervisor_agent.py       # one model-driven supervisor node
 ├─ graphs/
-│  └─ user_chat.py              # supervisor ↔ tool loop and allowlists
+│  ├─ user_chat.py              # supervisor ↔ tool loop and allowlists
+│  └─ checkpointing.py           # optional PostgreSQL thread checkpoints
 ├─ prompts/
 │  └─ supervisor.mustache
 ├─ services/                    # data integrations
@@ -51,7 +56,8 @@ The two variants are compiled once and cached with separate fixed allowlists.
 │  ├─ letterboxd.py             # normalized movie context
 │  └─ master_tools.py           # admin-only mutations
 ├─ utils/
-│  ├─ constants.py              # embeddings, vector_store, llm, spotify client wrapper
+│  ├─ settings.py               # validated runtime settings
+│  ├─ constants.py              # lazy integration factories and Spotify wrapper
 │  └─ loader.py                 # prompt loader
 ├─ data.csv                     # CSV used to embed knowledge (optional)
 ├─ requirements.txt
@@ -98,6 +104,14 @@ PINECONE_API_KEY=...
 INDEX_HOST=your-pinecone-host
 PINECONE_INDEX=your-index-name
 NAMESPACE=default
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_TEMPERATURE=0.2
+OPENAI_TIMEOUT_SECONDS=45
+OPENAI_MAX_RETRIES=2
+# Optional LangSmith tracing. Do not enable without applying your trace privacy policy.
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=...
+LANGSMITH_PROJECT=portfolio-be
 SPOTIFY_CLIENT_ID=...
 SPOTIFY_CLIENT_SECRET=...
 SPOTIFY_REFRESH_TOKEN=...   # see "Spotify on Render" below
@@ -107,6 +121,8 @@ SPOTIFY_REDIRECT_URI=https://yourdomain.com/callback
 DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/chatbot
 # Optional fallback if DATABASE_URL is invalid/unreachable (default: sqlite:///./chatbot.db)
 DATABASE_FALLBACK_URL=sqlite:///./chatbot.db
+# Enable persistent LangGraph thread state when DATABASE_URL is PostgreSQL.
+LANGGRAPH_CHECKPOINTS_ENABLED=true
 RATE_LIMIT_REQUESTS=30
 RATE_LIMIT_WINDOW_SECONDS=60
 
@@ -152,7 +168,6 @@ Open:
 ```json
 {
   "query": "Recommend me songs similar to the ones Nenad listens to",
-  "history": "USER: previous question\nAI: previous answer",
   "visitor_id": "visitor_123",
   "chat_session_id": "session_abc",
   "email": "guest"
@@ -170,8 +185,43 @@ Response:
 ```
 
 The request `email` field remains accepted for compatibility but never grants access. Protected chat
-actions are exposed only when the bearer token is valid, its email is verified, and its normalized
+proposal capability is exposed only when the bearer token is valid, its email is verified, and its normalized
 email exactly matches `MASTER_EMAIL`. Guests and all other authenticated users receive the read-only graph.
+
+### Confirming a protected change
+
+An admin chat request that supplies all required fields returns `pending_action` alongside the normal answer:
+
+```json
+{
+  "pending_action": {
+    "action_id": "...",
+    "action": "add_cd",
+    "summary": "Add CD: Artist — Album (owned: true)."
+  }
+}
+```
+
+Review that summary in the frontend, then execute it explicitly with the same verified Firebase bearer token:
+
+```bash
+curl -X POST "http://127.0.0.1:8000/admin/actions/ACTION_ID/confirm" \
+  -H "Authorization: Bearer <id_token>"
+```
+
+Confirmation is idempotent after completion. A second request returns the recorded outcome rather than repeating
+the write. The endpoint currently has no expiry policy, so operators should periodically review old pending actions.
+
+### Tests and CI
+
+Run the backend test suite from a fresh environment:
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m unittest discover -s tests -v
+```
+
+GitHub Actions runs this suite on Python 3.10 and 3.12 for pull requests and changes to `main`.
 
 ### Analytics endpoint (admin only)
 
@@ -244,5 +294,5 @@ This will use the `OpenAIEmbeddings` and `PineconeVectorStore` objects you alrea
 ```bash
 curl -X POST "http://127.0.0.1:8000/ask" \
   -H "Content-Type: application/json" \
-  -d '{"query":"Recommend me music similar to Nenad recent listens","history":"", "visitor_id":"visitor_123","chat_session_id":"session_abc","email":"guest"}'
+  -d '{"query":"Recommend me music similar to Nenad recent listens", "visitor_id":"visitor_123","chat_session_id":"session_abc","email":"guest"}'
 ```

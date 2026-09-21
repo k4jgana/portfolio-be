@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 
 BASE_URL = "https://www.last.fm"
 USER = "k4jgana"
+REQUEST_TIMEOUT_SECONDS = 15
 
 
 def get_html(url):
@@ -14,7 +15,7 @@ def get_html(url):
             " Chrome/123.0 Safari/537.36"
         )
     }
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
     response.raise_for_status()
     return response.text
 

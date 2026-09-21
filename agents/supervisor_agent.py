@@ -15,10 +15,7 @@ def supervisor_agent(
     model_with_tools: BaseChatModel,
 ) -> dict:
     """Choose any needed capabilities, then produce the single final answer."""
-    prompt = load_prompt(
-        "supervisor",
-        context={"convo_history": state.get("convo_history", "")},
-    )
+    prompt = load_prompt("supervisor")
     response = model_with_tools.invoke(
         [SystemMessage(content=prompt), *state["messages"]]
     )

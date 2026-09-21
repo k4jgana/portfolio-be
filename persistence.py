@@ -2,6 +2,7 @@ import logging
 import os
 import re
 import uuid
+import json
 from datetime import datetime, timezone
 
 from dotenv import load_dotenv
@@ -121,6 +122,23 @@ class QuestionSubmission(Base):
     outcome = Column(String(64), nullable=False, default="started", index=True)
     status_code = Column(Integer, nullable=True)
     submitted_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, index=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class PendingAdminAction(Base):
+    """A validated write proposed by the model but not yet approved by the admin."""
+
+    __tablename__ = "pending_admin_actions"
+
+    action_id = Column(String(64), primary_key=True)
+    chat_session_id = Column(String(128), ForeignKey("chat_sessions.chat_session_id"), nullable=False, index=True)
+    requested_by = Column(String(320), nullable=False)
+    action = Column(String(64), nullable=False)
+    payload = Column(Text, nullable=False)
+    status = Column(String(32), nullable=False, default="pending", index=True)
+    result = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    confirmed_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
 
@@ -259,7 +277,8 @@ def normalize_identifier(value: str | None, prefix: str) -> str:
     return generate_identifier(prefix)
 
 
-def get_recent_history(db: Session, chat_session_id: str, max_messages: int = 12) -> str:
+def get_recent_messages(db: Session, chat_session_id: str, max_messages: int = 12) -> list[dict[str, str]]:
+    """Return persisted turns with stable IDs for LangGraph message state."""
     rows = (
         db.query(ChatMessage)
         .filter(ChatMessage.chat_session_id == chat_session_id)
@@ -267,8 +286,10 @@ def get_recent_history(db: Session, chat_session_id: str, max_messages: int = 12
         .limit(max_messages)
         .all()
     )
-    ordered = list(reversed(rows))
-    return "\n".join(f"{msg.role.upper()}: {msg.content}" for msg in ordered)
+    return [
+        {"id": f"chat-{row.id}", "role": row.role, "content": row.content}
+        for row in reversed(rows)
+    ]
 
 
 def upsert_visitor_and_session(
@@ -378,6 +399,76 @@ def complete_question_submission(
     submission.status_code = status_code
     submission.completed_at = utcnow()
     db.commit()
+
+
+def create_pending_admin_action(
+    db: Session,
+    *,
+    chat_session_id: str,
+    requested_by: str,
+    action: str,
+    payload: dict,
+) -> PendingAdminAction:
+    pending = PendingAdminAction(
+        action_id=uuid.uuid4().hex,
+        chat_session_id=chat_session_id,
+        requested_by=requested_by,
+        action=action,
+        payload=json.dumps(payload, sort_keys=True),
+        status="pending",
+        created_at=utcnow(),
+    )
+    db.add(pending)
+    db.commit()
+    return pending
+
+
+def get_pending_admin_action(db: Session, action_id: str) -> PendingAdminAction | None:
+    return (
+        db.query(PendingAdminAction)
+        .filter(PendingAdminAction.action_id == action_id)
+        .first()
+    )
+
+
+def claim_pending_admin_action(
+    db: Session,
+    *,
+    action_id: str,
+    requested_by: str,
+) -> tuple[PendingAdminAction | None, bool]:
+    """Atomically claim a pending action; completed actions are safe to re-read."""
+    pending = (
+        db.query(PendingAdminAction)
+        .filter(PendingAdminAction.action_id == action_id)
+        .with_for_update()
+        .first()
+    )
+    if pending is None or pending.requested_by != requested_by:
+        return None, False
+    if pending.status == "pending":
+        pending.status = "executing"
+        pending.confirmed_at = utcnow()
+        db.commit()
+        return pending, True
+    return pending, False
+
+
+def complete_pending_admin_action(
+    db: Session,
+    *,
+    action_id: str,
+    status: str,
+    result: str,
+) -> PendingAdminAction | None:
+    pending = get_pending_admin_action(db, action_id)
+    if pending is None:
+        return None
+    pending.status = status
+    pending.result = result
+    pending.completed_at = utcnow()
+    db.commit()
+    return pending
 
 
 def log_chat_event(
