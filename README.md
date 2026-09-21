@@ -14,7 +14,7 @@ An explicit supervisor/tool loop retrieves facts as needed and produces one fina
 * Admin chat requests can only create a validated write proposal; a separate authenticated confirmation executes it.
 * Explicit graph step budget, model retries, and upstream request timeouts.
 * Single endpoint to query the agent: `POST /ask`.
-* Ready for local development and hosting (e.g. Render).
+* Ready for local development and Docker deployment.
 
 ---
 
@@ -114,7 +114,7 @@ LANGSMITH_API_KEY=...
 LANGSMITH_PROJECT=portfolio-be
 SPOTIFY_CLIENT_ID=...
 SPOTIFY_CLIENT_SECRET=...
-SPOTIFY_REFRESH_TOKEN=...   # see "Spotify on Render" below
+SPOTIFY_REFRESH_TOKEN=...
 SPOTIFY_REDIRECT_URI=https://yourdomain.com/callback
 
 # Chat tracking + persistence
